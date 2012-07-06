@@ -1,4 +1,4 @@
-/*
+/*k
  * Copyright (C) 2007 The Android Open Source Project
  * Copyright (c) 2010, Code Aurora Forum. All rights reserved.
  *
@@ -220,7 +220,9 @@ get_args(int *argc, char ***argv) {
         strlcat(boot.recovery, (*argv)[i], sizeof(boot.recovery));
         strlcat(boot.recovery, "\n", sizeof(boot.recovery));
     }
-    set_bootloader_message(&boot);
+    if (device_flash_type() == MTD) {
+        set_bootloader_message(&boot);
+    }
 }
 
 void
@@ -282,10 +284,12 @@ finish_recovery(const char *send_intent) {
     copy_log_file(LAST_LOG_FILE, false);
     chmod(LAST_LOG_FILE, 0640);
 
-    // Reset to normal system boot so recovery won't cycle indefinitely.
-    struct bootloader_message boot;
-    memset(&boot, 0, sizeof(boot));
-    set_bootloader_message(&boot);
+    if (device_flash_type() == MTD) {
+        // Reset to mormal system boot so recovery won't cycle indefinitely.
+        struct bootloader_message boot;
+        memset(&boot, 0, sizeof(boot));
+        set_bootloader_message(&boot);
+    }
 
     // Remove the command file, so recovery won't repeat indefinitely.
     if (ensure_path_mounted(COMMAND_FILE) != 0 ||
@@ -427,10 +431,11 @@ prepend_title(char** headers) {
 int
 get_menu_selection(char** headers, char** items, int menu_only,
                    int initial_selection) {
+    //printf("getting a menu selection\n");
     // throw away keys pressed previously, so user doesn't
     // accidentally trigger menu items.
     ui_clear_key_queue();
-    
+
     ++ui_menu_level;
     int item_count = ui_start_menu(headers, items, initial_selection);
     int selected = initial_selection;
@@ -489,9 +494,10 @@ get_menu_selection(char** headers, char** items, int menu_only,
             chosen_item = action;
         }
 
+        
         if (abs(selected - old_selected) > 1) {
             wrap_count++;
-            if (wrap_count == 3) {
+            if (wrap_count == 300) {
                 wrap_count = 0;
                 if (ui_get_showing_back_button()) {
                     ui_print("Back menu button disabled.\n");
@@ -692,7 +698,7 @@ prompt_and_wait() {
     for (;;) {
         finish_recovery(NULL);
         ui_reset_progress();
-        
+
         ui_menu_level = -1;
         allow_display_toggle = 1;
         int chosen_item = get_menu_selection(headers, MENU_ITEMS, 0, 0);
@@ -754,22 +760,22 @@ print_property(const char *key, const char *name, void *cookie) {
 
 int
 main(int argc, char **argv) {
-    if (strcmp(basename(argv[0]), "recovery") != 0)
-    {
-        if (strstr(argv[0], "flash_image") != NULL)
-            return flash_image_main(argc, argv);
-        if (strstr(argv[0], "volume") != NULL)
-            return volume_main(argc, argv);
-        if (strstr(argv[0], "edify") != NULL)
-            return edify_main(argc, argv);
-        if (strstr(argv[0], "dump_image") != NULL)
-            return dump_image_main(argc, argv);
-        if (strstr(argv[0], "erase_image") != NULL)
-            return erase_image_main(argc, argv);
-        if (strstr(argv[0], "mkyaffs2image") != NULL)
-            return mkyaffs2image_main(argc, argv);
-        if (strstr(argv[0], "unyaffs") != NULL)
-            return unyaffs_main(argc, argv);
+	if (strcmp(basename(argv[0]), "recovery") != 0)
+	{
+	    if (strstr(argv[0], "flash_image") != NULL)
+	        return flash_image_main(argc, argv);
+	    if (strstr(argv[0], "volume") != NULL)
+	        return volume_main(argc, argv);
+	    if (strstr(argv[0], "edify") != NULL)
+	        return edify_main(argc, argv);
+	    if (strstr(argv[0], "dump_image") != NULL)
+	        return dump_image_main(argc, argv);
+	    if (strstr(argv[0], "erase_image") != NULL)
+	        return erase_image_main(argc, argv);
+	    if (strstr(argv[0], "mkyaffs2image") != NULL)
+	        return mkyaffs2image_main(argc, argv);
+	    if (strstr(argv[0], "unyaffs") != NULL)
+	        return unyaffs_main(argc, argv);
         if (strstr(argv[0], "nandroid"))
             return nandroid_main(argc, argv);
         if (strstr(argv[0], "reboot"))
@@ -786,8 +792,8 @@ main(int argc, char **argv) {
         }
         if (strstr(argv[0], "setprop"))
             return setprop_main(argc, argv);
-        return busybox_driver(argc, argv);
-    }
+		return busybox_driver(argc, argv);
+	}
     __system("/sbin/postrecoveryboot.sh");
 
     int is_user_initiated_recovery = 0;
@@ -800,7 +806,7 @@ main(int argc, char **argv) {
 
     device_ui_init(&ui_parameters);
     ui_init();
-    ui_print(EXPAND(RECOVERY_VERSION)"\n");
+    //ui_print(EXPAND(RECOVERY_VERSION)"\n");
     load_volume_table();
     process_volumes();
     LOGI("Processing arguments.\n");
@@ -820,9 +826,9 @@ main(int argc, char **argv) {
         case 'u': update_package = optarg; break;
         case 'w': 
 #ifndef BOARD_RECOVERY_ALWAYS_WIPES
-        wipe_data = wipe_cache = 1;
+		wipe_data = wipe_cache = 1;
 #endif
-        break;
+		break;
         case 'c': wipe_cache = 1; break;
         case 't': ui_show_text(1); break;
         case '?':

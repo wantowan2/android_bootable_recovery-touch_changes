@@ -48,6 +48,7 @@
 int signature_check_enabled = 1;
 int script_assert_enabled = 1;
 static const char *SDCARD_UPDATE_FILE = "/sdcard/update.zip";
+static const char *EMMC_UPDATE_FILE = "/emmc/update.zip";
 
 void
 toggle_signature_check()
@@ -75,22 +76,24 @@ int install_zip(const char* packagefilepath)
         ui_print("Installation aborted.\n");
         return 1;
     }
-    ui_set_background(BACKGROUND_ICON_NONE);
+    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     ui_print("\nInstall from sdcard complete.\n");
     return 0;
 }
 
-char* INSTALL_MENU_ITEMS[] = {  "choose zip from sdcard",
-                                "apply /sdcard/update.zip",
+char* INSTALL_MENU_ITEMS[] = {  "choose zip from internal sdcard",
+                                "choose zip from external sdcard",
+                                "apply /sdcard/update.zip (external)",
+                                "apply /emmc/update.zip (internal)",
                                 "toggle signature verification",
                                 "toggle script asserts",
-                                "choose zip from internal sdcard",
                                 NULL };
-#define ITEM_CHOOSE_ZIP       0
-#define ITEM_APPLY_SDCARD     1
-#define ITEM_SIG_CHECK        2
-#define ITEM_ASSERTS          3
-#define ITEM_CHOOSE_ZIP_INT   4
+#define ITEM_CHOOSE_ZIP_INT   0
+#define ITEM_CHOOSE_ZIP       1
+#define ITEM_APPLY_SDCARD     2
+#define ITEM_APPLY_EMMC       3
+#define ITEM_SIG_CHECK        4
+#define ITEM_ASSERTS          5
 
 void show_install_update_menu()
 {
@@ -117,6 +120,12 @@ void show_install_update_menu()
             {
                 if (confirm_selection("Confirm install?", "Yes - Install /sdcard/update.zip"))
                     install_zip(SDCARD_UPDATE_FILE);
+                break;
+            }
+            case ITEM_APPLY_EMMC:
+            {
+                if (confirm_selection("Confirm install?", "Yes - Install /emmc/update.zip"))
+                    install_zip(EMMC_UPDATE_FILE);
                 break;
             }
             case ITEM_CHOOSE_ZIP:
@@ -364,7 +373,7 @@ void show_nandroid_restore_menu(const char* path)
 void show_mount_usb_storage_menu()
 {
     int fd;
-    Volume *vol = volume_for_path("/sdcard");
+    Volume *vol = volume_for_path("/emmc");
     if ((fd = open(BOARD_UMS_LUNFILE, O_WRONLY)) < 0) {
         LOGE("Unable to open ums lunfile (%s)", strerror(errno));
         return -1;
@@ -379,6 +388,8 @@ void show_mount_usb_storage_menu()
     static char* headers[] = {  "USB Mass Storage device",
                                 "Leaving this menu unmount",
                                 "your SD card from your PC.",
+                                "This only mounts the",
+                                "EXTERNAL sdcard.",
                                 "",
                                 NULL
     };
@@ -605,8 +616,8 @@ int is_safe_to_format(char* name)
 {
     char str[255];
     char* partition;
-    property_get("ro.cwm.forbid_format", str, "/misc,/radio,/bootloader,/recovery,/efs");
-
+    //property_get("ro.cwm.forbid_format", str, "/misc,/radio,/bootloader,/recovery,/efs");
+    property_get("ro.cwm.forbid_format", str, "/radio,/bootloader,/recovery,/efs");
     partition = strtok(str, ", ");
     while (partition != NULL) {
         if (strcmp(name, partition) == 0) {
@@ -824,46 +835,22 @@ void show_nandroid_menu()
                                 NULL
     };
 
-    static char* list[] = { "backup",
-                            "restore",
-                            "advanced restore",
-                            "backup to internal sdcard",
+    static char* list[] = { "backup to internal sdcard",
                             "restore from internal sdcard",
                             "advanced restore from internal sdcard",
+                            "backup to external sdcard",
+                            "restore from external sdcard",
+                            "advanced restore from external sdcard",
                             NULL
     };
 
-    if (volume_for_path("/emmc") == NULL)
+    if (volume_for_path("/emmc") == NULL || volume_for_path("/sdcard") == NULL && is_data_media())
         list[3] = NULL;
 
     int chosen_item = get_menu_selection(headers, list, 0, 0);
     switch (chosen_item)
     {
         case 0:
-            {
-                char backup_path[PATH_MAX];
-                time_t t = time(NULL);
-                struct tm *tmp = localtime(&t);
-                if (tmp == NULL)
-                {
-                    struct timeval tp;
-                    gettimeofday(&tp, NULL);
-                    sprintf(backup_path, "/sdcard/clockworkmod/backup/%d", tp.tv_sec);
-                }
-                else
-                {
-                    strftime(backup_path, sizeof(backup_path), "/sdcard/clockworkmod/backup/%F.%H.%M.%S", tmp);
-                }
-                nandroid_backup(backup_path);
-            }
-            break;
-        case 1:
-            show_nandroid_restore_menu("/sdcard");
-            break;
-        case 2:
-            show_nandroid_advanced_restore_menu("/sdcard");
-            break;
-        case 3:
             {
                 char backup_path[PATH_MAX];
                 time_t t = time(NULL);
@@ -881,11 +868,35 @@ void show_nandroid_menu()
                 nandroid_backup(backup_path);
             }
             break;
-        case 4:
+        case 1:
             show_nandroid_restore_menu("/emmc");
             break;
-        case 5:
+        case 2:
             show_nandroid_advanced_restore_menu("/emmc");
+            break;
+        case 3:
+            {
+                char backup_path[PATH_MAX];
+                time_t t = time(NULL);
+                struct tm *tmp = localtime(&t);
+                if (tmp == NULL)
+                {
+                    struct timeval tp;
+                    gettimeofday(&tp, NULL);
+                    sprintf(backup_path, "/sdcard/clockworkmod/backup/%d", tp.tv_sec);
+                }
+                else
+                {
+                    strftime(backup_path, sizeof(backup_path), "/sdcard/clockworkmod/backup/%F.%H.%M.%S", tmp);
+                }
+                nandroid_backup(backup_path);
+            }
+            break;
+        case 4:
+            show_nandroid_restore_menu("/sdcard");
+            break;
+        case 5:
+            show_nandroid_advanced_restore_menu("/sdcard");
             break;
     }
 }
@@ -905,17 +916,15 @@ void show_advanced_menu()
                                 NULL
     };
 
-    static char* list[] = { "Reboot Recovery",
-                            "Wipe Dalvik Cache",
+    static char* list[] = { "Wipe Dalvik Cache",
                             "Wipe Battery Stats",
                             "Report Error",
                             "Key Test",
                             "Show log",
-                            "Partition SD Card",
+                            "Partition External SD Card",
                             "Fix Permissions",
-#ifdef BOARD_HAS_SDCARD_INTERNAL
-                            "Partition Internal SD Card",
-#endif
+                            "Reboot Recovery",
+                            "Reboot Download Mode",
                             NULL
     };
 
@@ -927,11 +936,6 @@ void show_advanced_menu()
         switch (chosen_item)
         {
             case 0:
-            {
-                android_reboot(ANDROID_RB_RESTART2, 0, "recovery");
-                break;
-            }
-            case 1:
             {
                 if (0 != ensure_path_mounted("/data"))
                     break;
@@ -946,16 +950,16 @@ void show_advanced_menu()
                 ensure_path_unmounted("/data");
                 break;
             }
-            case 2:
+            case 1:
             {
                 if (confirm_selection( "Confirm wipe?", "Yes - Wipe Battery Stats"))
                     wipe_battery_stats();
                 break;
             }
-            case 3:
+            case 2:
                 handle_failure(1);
                 break;
-            case 4:
+            case 3:
             {
                 ui_print("Outputting key codes.\n");
                 ui_print("Go back to end debugging.\n");
@@ -970,12 +974,12 @@ void show_advanced_menu()
                 while (action != GO_BACK);
                 break;
             }
-            case 5:
+            case 4:
             {
                 ui_printlogtail(12);
                 break;
             }
-            case 6:
+            case 5:
             {
                 static char* ext_sizes[] = { "128M",
                                              "256M",
@@ -1011,14 +1015,14 @@ void show_advanced_menu()
                 char cmd[PATH_MAX];
                 setenv("SDPATH", sddevice, 1);
                 sprintf(cmd, "sdparted -es %s -ss %s -efs ext3 -s", ext_sizes[ext_size], swap_sizes[swap_size]);
-                ui_print("Partitioning SD Card... please wait...\n");
+                ui_print("Partitioning External SD Card... please wait...\n");
                 if (0 == __system(cmd))
                     ui_print("Done!\n");
                 else
-                    ui_print("An error occured while partitioning your SD Card. Please see /tmp/recovery.log for more details.\n");
+                    ui_print("An error occured while partitioning your External SD Card. Please see /tmp/recovery.log for more details.\n");
                 break;
             }
-            case 7:
+            case 6:
             {
                 ensure_path_mounted("/system");
                 ensure_path_mounted("/data");
@@ -1027,47 +1031,14 @@ void show_advanced_menu()
                 ui_print("Done!\n");
                 break;
             }
+            case 7:
+            {
+                android_reboot(ANDROID_RB_RESTART2, 0, "recovery");
+                break;
+            }
             case 8:
             {
-                static char* ext_sizes[] = { "128M",
-                                             "256M",
-                                             "512M",
-                                             "1024M",
-                                             "2048M",
-                                             "4096M",
-                                             NULL };
-
-                static char* swap_sizes[] = { "0M",
-                                              "32M",
-                                              "64M",
-                                              "128M",
-                                              "256M",
-                                              NULL };
-
-                static char* ext_headers[] = { "Data Size", "", NULL };
-                static char* swap_headers[] = { "Swap Size", "", NULL };
-
-                int ext_size = get_menu_selection(ext_headers, ext_sizes, 0, 0);
-                if (ext_size == GO_BACK)
-                    continue;
-
-                int swap_size = 0;
-                if (swap_size == GO_BACK)
-                    continue;
-
-                char sddevice[256];
-                Volume *vol = volume_for_path("/emmc");
-                strcpy(sddevice, vol->device);
-                // we only want the mmcblk, not the partition
-                sddevice[strlen("/dev/block/mmcblkX")] = NULL;
-                char cmd[PATH_MAX];
-                setenv("SDPATH", sddevice, 1);
-                sprintf(cmd, "sdparted -es %s -ss %s -efs ext3 -s", ext_sizes[ext_size], swap_sizes[swap_size]);
-                ui_print("Partitioning Internal SD Card... please wait...\n");
-                if (0 == __system(cmd))
-                    ui_print("Done!\n");
-                else
-                    ui_print("An error occured while partitioning your Internal SD Card. Please see /tmp/recovery.log for more details.\n");
+                android_reboot(ANDROID_RB_RESTART2, 0, "download");
                 break;
             }
         }
